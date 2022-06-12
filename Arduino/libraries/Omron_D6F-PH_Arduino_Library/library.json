@@ -1,0 +1,22 @@
+{
+    "name": "Omron_D6FPH",
+    "keywords": "omron, differential, pressure, sensor, D6F-PH0025AD1, D6F-PH0505AD3, D6F-PH5050AD3",
+    "description": "Library for I2C Communication with Omron D6F-PH Differential Pressure Sensor",
+    "homepage": "https://github.com/bitixel/Omron_D6FPH",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/bitixel/Omron_D6FPH.git"
+    },
+    "version": "1.1.0",
+    "authors": {
+        "name": "Bitixel",
+        "url": "https://bitixel.com",
+        "maintainer": true
+    },
+    "exclude": [
+        "test"
+    ],
+    "examples": "examples/*/*.ino",
+    "frameworks": "arduino",
+    "platforms": ["atmelavr", "espressif8266", "espressif32"]
+}

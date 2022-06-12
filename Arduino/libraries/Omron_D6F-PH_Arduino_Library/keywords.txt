@@ -1,0 +1,28 @@
+#######################################
+# Syntax Coloring Map
+#######################################
+
+#######################################
+# Datatypes (KEYWORD1)
+#######################################
+
+Omron_D6FPH KEYWORD1
+sensorModels    KEYWORD1
+
+#######################################
+# Methods and Functions (KEYWORD2)
+#######################################
+
+begin	        KEYWORD2
+setSensorModel	KEYWORD2
+isConnected	    KEYWORD2
+getPressure	    KEYWORD2
+getTemperature	KEYWORD2
+
+#######################################
+# Constants (LITERAL1)
+#######################################
+
+MODEL_0025AD1   LITERAL1
+MODEL_0505AD3   LITERAL1
+MODEL_5050AD3   LITERAL1
