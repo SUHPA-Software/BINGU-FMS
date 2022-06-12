@@ -1,4 +1,4 @@
-/*  binguOS, written by Yaseen Reza 11/06/2022  */
+/*  binguOS, written by Yaseen Reza 12/06/2022  */
 #include <SD.h>
 #include <SoftwareSerial.h>
 #include <SPI.h>
@@ -77,7 +77,7 @@ struct BMPsensor {
 } bmpsensor0;
 struct D6Fsensor {
   double q_Pa;
-  float T_K;
+  float T_C;
   double theta_rad;
   double psi_rad;
 } d6fsensor0, d6fsensor1, d6fsensor2;
@@ -149,16 +149,7 @@ void setup() {
   Wire.begin();
   
   // Initialise barometric sensor
-  if (bmp.begin()) {
-    printLCD("BMP280    [ OK ]");
-  }
-  else if (bmp.begin(BMP280_ADDRESS_ALT, BMP280_CHIPID)) {
-    printLCD("BMP280    [ OK ]");
-  }
-  else {
-    printLCD("BMP280    [FAIL]");
-    delay(1000);
-  }
+  beginBMP();
 
   // Initialise orientation sensor
   if (bno.begin()) {
@@ -170,24 +161,25 @@ void setup() {
   }
 
   // Initialise dynamic pressure sensors
+  d6f.begin(MODEL_0025AD1);
   // Sensor 0
   digitalWrite(SW2_D6F, LOW);
   digitalWrite(SW3_D6F, LOW);
-  if (d6f.begin(MODEL_0025AD1)) {
+  if (d6f.isConnected()) {
     d6favailable = d6favailable + 1;
   }
   d6fsensor0.theta_rad = d6f_halfangle * sin((2 * pi * 0 / 3) + d6f_rotoffset);
   d6fsensor0.psi_rad = d6f_halfangle * cos((2 * pi * 0 / 3) + d6f_rotoffset);
   // Sensor 1
   digitalWrite(SW2_D6F, HIGH);
-  if (d6f.begin(MODEL_0025AD1)) {
+  if (d6f.isConnected()) {
     d6favailable = d6favailable + 1;
   }
   d6fsensor1.theta_rad = d6f_halfangle * sin((2 * pi * 1 / 3) + d6f_rotoffset);
   d6fsensor1.psi_rad = d6f_halfangle * cos((2 * pi * 1 / 3) + d6f_rotoffset);
   // Sensor 2
   digitalWrite(SW3_D6F, HIGH);
-  if (d6f.begin(MODEL_0025AD1)) {
+  if (d6f.isConnected()) {
     d6favailable = d6favailable + 1;
   }
   d6fsensor2.theta_rad = d6f_halfangle * sin((2 * pi * 2 / 3) + d6f_rotoffset);
@@ -198,7 +190,7 @@ void setup() {
   if (d6favailable == 3) {
     printLCD("D6F-PH0025[ OK ]");
   }
-  else if (d6favailable < 3) {
+  else if ((0 < d6favailable) && (d6favailable < 3)) {
     printLCD("D6F-PH0025[WARN]");
     delay(1000);
   }
@@ -237,6 +229,31 @@ void setup() {
 //------------------------------------------------------------------------------
 
 void loop() {
+  Serial.println(d6favailable);
+  //-------------------------------------
+  // Try to initialise hotplugged sensors
+  //-------------------------------------
+  // Start BMP if missing
+  if (bmp.getStatus() == 0) {
+    beginBMP();
+  }
+  // Count D6F-PH0025AD1s if they are added
+  d6favailable = 0;
+  digitalWrite(SW2_D6F, LOW);
+  digitalWrite(SW3_D6F, LOW);
+  if (d6f.isConnected()) {
+    d6favailable = d6favailable + 1;
+  }
+  digitalWrite(SW2_D6F, HIGH);
+  if (d6f.isConnected()) {
+    d6favailable = d6favailable + 1;
+  }
+  digitalWrite(SW3_D6F, HIGH);
+  if (d6f.isConnected()) {
+    d6favailable = d6favailable + 1;
+  }
+  digitalWrite(SW2_D6F, LOW);
+  digitalWrite(SW3_D6F, LOW);
 
   //-----------------------
   // Update all peripherals
@@ -249,16 +266,52 @@ void loop() {
   //-------------------------
   // Do all the mathsy stuffs
   //-------------------------
-  float Patm_Pa = bmpsensor0.P_Pa;
-  float RH_percent = htusensor0.RH;
-  float T_C = htusensor0.T_C;
+  float Patm_Pa;
+  float RH_percent;
+  float T_C;
+
+  // Find a suitable candidate for static pressure
+  if (!isnan(bmpsensor0.P_Pa)) {
+    Patm_Pa = bmpsensor0.P_Pa;
+  }
+  else {
+    Patm_Pa = 101325.0; // Assign sea-level conditions
+  }
+
+  // Find the a suitable candidate for relative humidity
+  if (!isnan(htusensor0.RH)) {
+    RH_percent = htusensor0.RH;
+  }
+  else {
+    RH_percent = 40;  // Assign some humidity I chose
+  }
+
+  // Find the a suitable candidate for temperature
+  if (!isnan(htusensor0.T_C)) {
+    T_C = htusensor0.T_C;
+  }
+  else if (!isnan(bmpsensor0.T_C)) {
+    T_C = bmpsensor0.T_C;
+  }
+  else if (!isnan(d6fsensor0.T_C)) {
+    T_C = d6fsensor0.T_C;
+  }
+  else if (!isnan(d6fsensor1.T_C)) {
+    T_C = d6fsensor1.T_C;
+  }
+  else if (!isnan(d6fsensor2.T_C)) {
+    T_C = d6fsensor2.T_C;
+  }
+  else {
+    T_C = 15.0; // Assign sea-level conditions
+  }
 
   // Use Yaseen's derivation to find angle of attack/sideslip and dynamic pressure
   double alpha_rad = 0;
   double beta_rad = 0;
   double q_Pa = 0;
-  // All D6Fs are available
-  if ((d6fsensor0.q_Pa > 0) && (d6fsensor1.q_Pa > 0) & (d6fsensor2.q_Pa > 0)) {
+  // Check if all D6F-PH0025AD1s are available
+  if (d6favailable == 3) {
     double yA = d6fsensor0.q_Pa * cos(d6fsensor1.theta_rad) * cos(d6fsensor1.psi_rad);
     yA = yA - d6fsensor1.q_Pa * cos(d6fsensor0.theta_rad) * cos(d6fsensor0.psi_rad);
     
@@ -299,7 +352,7 @@ void loop() {
     q_Pa = d6fsensor0.q_Pa / cos(alpha_rad + d6fsensor0.theta_rad) / cos(beta_rad + d6fsensor0.psi_rad);
   } 
   // Else at least one D6F is available, take the average dynamic pressure
-  else if (d6favailable > 0) {
+  else if ((0 < d6favailable) && (d6favailable < 3)) {
     double Sigmaq_Pa = 0;
     if (d6fsensor0.q_Pa > 0) {
       Sigmaq_Pa = Sigmaq_Pa + d6fsensor0.q_Pa;
@@ -479,9 +532,6 @@ void loop() {
     
   }
 
-  Serial.println(degrees(alpha_rad));
-  Serial.println(degrees(beta_rad));
-
   // Limit the clock cycle to a maximum possible refresh of 20 Hz
   delay(50);
 
@@ -502,6 +552,20 @@ void loop() {
 //------------------------------------------------------------------------------
 // Support Functions
 //------------------------------------------------------------------------------
+
+void beginBMP()
+{
+  if (bmp.begin()) {
+    printLCD("BMP280    [ OK ]");
+  }
+  else if (bmp.begin(BMP280_ADDRESS_ALT, BMP280_CHIPID)) {
+    printLCD("BMP280    [ OK ]");
+  }
+  else {
+    printLCD("BMP280    [FAIL]");
+    delay(1000);
+  }
+}
 
 void printLCD(const char *str, int skiprows)
 {
@@ -586,9 +650,15 @@ void setLCDexpiry(unsigned long t_ms)
 
 void updateBMP(struct BMPsensor *sensor)
 {
-  // Save pressure and temperature data
-  sensor->P_Pa = bmp.readPressure();
-  sensor->T_C = bmp.readTemperature();
+  if ((bmp.readPressure() > 0) && (bmp.readTemperature() < 179)) {
+    // Save pressure and temperature data
+    sensor->P_Pa = bmp.readPressure();
+    sensor->T_C = bmp.readTemperature();
+  }
+  else {
+    sensor->P_Pa = NAN;
+    sensor->T_C = NAN;
+  }
 }
 
 void updateD6F(struct D6Fsensor *sensor0, struct D6Fsensor *sensor1, struct D6Fsensor *sensor2)
@@ -599,33 +669,33 @@ void updateD6F(struct D6Fsensor *sensor0, struct D6Fsensor *sensor1, struct D6Fs
   digitalWrite(SW3_D6F, LOW);
   if (d6f.isConnected()) {
     sensor0->q_Pa = max(0, d6f.getPressure());
-    sensor0->T_K = d6f.getTemperature() + 273.15;
+    sensor0->T_C = d6f.getTemperature();
   }
   else {
-    sensor0->q_Pa = -1;
-    sensor0->T_K = -1;
+    sensor0->q_Pa = NAN;
+    sensor0->T_C = NAN;
   }
 
   // Read sensor 1
   digitalWrite(SW2_D6F, HIGH);
   if (d6f.isConnected()) {
     sensor1->q_Pa = max(0, d6f.getPressure());
-    sensor1->T_K = d6f.getTemperature() + 273.15;
+    sensor1->T_C = d6f.getTemperature();
   }
   else {
-    sensor1->q_Pa = -1;
-    sensor1->T_K = -1;
+    sensor1->q_Pa = NAN;
+    sensor1->T_C = NAN;
   }
 
   // Read sensor 2
   digitalWrite(SW3_D6F, HIGH);
   if (d6f.isConnected()) {
     sensor2->q_Pa = max(0, d6f.getPressure());
-    sensor2->T_K = d6f.getTemperature() + 273.15;
+    sensor2->T_C = d6f.getTemperature();
   }
   else {
-    sensor2->q_Pa = -1;
-    sensor2->T_K = -1;
+    sensor2->q_Pa = NAN;
+    sensor2->T_C = NAN;
   }
 
   // Clean-up
