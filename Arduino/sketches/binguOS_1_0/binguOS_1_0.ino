@@ -1,4 +1,4 @@
-/*  binguOS, written by Yaseen Reza 12/06/2022  */
+/*  binguOS, written by Yaseen Reza 13/06/2022  */
 #include <SD.h>
 #include <SoftwareSerial.h>
 #include <SPI.h>
@@ -279,30 +279,30 @@ void loop() {
   // Do all the mathsy stuffs
   //-------------------------
   // Compute the original cell voltages
-  float cell1_V = (RST1_Ohm + RST2_Ohm) / RST2_Ohm * vsense1_V;
-  float cell2_V = (RST3_Ohm + RST4_Ohm) / RST4_Ohm * vsense2_V;
-  float cell3_V = (RST5_Ohm + RST6_Ohm) / RST6_Ohm * vsense3_V;
+  float cell0_V = (RST1_Ohm + RST2_Ohm) / RST2_Ohm * vsense1_V;
+  float cell1_V = (RST3_Ohm + RST4_Ohm) / RST4_Ohm * vsense2_V;
+  float cell2_V = (RST5_Ohm + RST6_Ohm) / RST6_Ohm * vsense3_V;
 
   // If battery is about to die, warn the user!
   if (
+    ((0.5 < cell0_V) && (cell0_V <= 3.73)) ||
     ((0.5 < cell1_V) && (cell1_V <= 3.73)) ||
-    ((0.5 < cell2_V) && (cell2_V <= 3.73)) ||
-    ((0.5 < cell3_V) && (cell3_V <= 3.73))
+    ((0.5 < cell2_V) && (cell2_V <= 3.73))
     ) {
     printLCD("LOBATT, TURN OFF");
     while(1); // Make the program stuck on purpose
   }
   // Else if any of the cells have below 3.8 V and no warning has been sent yet
   else if (
+    ((0.5 < cell0_V) && (cell0_V <= 3.8) && (lowbattflag == false)) ||
     ((0.5 < cell1_V) && (cell1_V <= 3.8) && (lowbattflag == false)) ||
-    ((0.5 < cell2_V) && (cell2_V <= 3.8) && (lowbattflag == false)) ||
-    ((0.5 < cell3_V) && (cell3_V <= 3.8) && (lowbattflag == false))
+    ((0.5 < cell2_V) && (cell2_V <= 3.8) && (lowbattflag == false))
     ) {
     printLCD("*LOBATT WARNING*");
     setLCDexpiry(20000);  // 20 seconds of warning
   }
   // Else if all the batteries are above 3.8 V, set lowbattflag to false
-  else if (((3.8 < cell1_V) && (3.8 < cell3_V) && (3.8 < cell3_V) && (lowbattflag == true))) {
+  else if (((3.8 < cell0_V) && (3.8 < cell2_V) && (3.8 < cell2_V) && (lowbattflag == true))) {
     lowbattflag = false;
   }
 
@@ -515,11 +515,54 @@ void loop() {
       datalog.print("SystemUptime [ms] ");
       datalog.print(millis());
       datalog.print(", ");
+      datalog.print("BATTcell_0 [V] ");
+      datalog.print(cell0_V);
+      datalog.print(", ");
+      datalog.print("BATTcell_1 [V] ");
+      datalog.print(cell1_V);
+      datalog.print(", ");
+      datalog.print("BATTcell_2 [V] ");
+      datalog.print(cell2_V);
+      datalog.print(", ");
+      datalog.flush();
+
+      datalog.print("BMP280_0 P[Pa] ");
+      datalog.print(bmpsensor0.T_C);
+      datalog.print(", ");
+      datalog.print("BMP280_0 T[C] ");
+      datalog.print(bmpsensor0.T_C);
+      datalog.print(", ");
+      datalog.flush();
+
+      datalog.print("HTU21DF_0 RH[%] ");
+      datalog.print(htusensor0.RH);
+      datalog.print(", ");
       datalog.print("HTU21DF_0 T[C] ");
       datalog.print(htusensor0.T_C);
       datalog.print(", ");
-      datalog.print("HTU21DF_0 RH[%] ");
-      datalog.print(htusensor0.RH);
+      datalog.flush();
+
+      datalog.print("D6F-PH0025AD1_0 q[Pa] ");
+      datalog.print(d6fsensor0.q_Pa);
+      datalog.print(", ");
+      datalog.print("D6F-PH0025AD1_0 T[C] ");
+      datalog.print(d6fsensor0.T_C);
+      datalog.print(", ");
+      datalog.flush();
+
+      datalog.print("D6F-PH0025AD1_1 q[Pa] ");
+      datalog.print(d6fsensor0.q_Pa);
+      datalog.print(", ");
+      datalog.print("D6F-PH0025AD1_1 T[C] ");
+      datalog.print(d6fsensor0.T_C);
+      datalog.print(", ");
+      datalog.flush();
+
+      datalog.print("D6F-PH0025AD1_2 q[Pa] ");
+      datalog.print(d6fsensor0.q_Pa);
+      datalog.print(", ");
+      datalog.print("D6F-PH0025AD1_2 T[C] ");
+      datalog.print(d6fsensor0.T_C);
   
       // Finish with the SD card
       datalog.println(";");
