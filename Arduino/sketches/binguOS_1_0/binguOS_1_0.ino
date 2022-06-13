@@ -20,9 +20,9 @@ const int LED2 = 5;
 const int SD_CHIPSELECT = BUILTIN_SDCARD;
 const int SW2_D6F = 11;
 const int SW3_D6F = 12;
-const int VBATT1 = 14;
-const int VBATT2 = 15;
-const int VBATT3 = 16;
+const int VSENSE1 = A0;
+const int VSENSE2 = A1;
+const int VSENSE3 = A2;
 const int I2C_SCL = SCL;
 const int I2C_SDA = SDA;
 const int LCD_RS = 22;
@@ -64,6 +64,13 @@ const int LCD_ROWS = 1;  // Only using 1 row gives much higher display contrast
 unsigned long LCD_msgexpirytime_ms;
 char LCD_textline1[17];
 unsigned long LED2_expirytime_ms = 0;
+bool lowbattflag = false;
+const long RST1_Ohm = 330000;
+const long RST2_Ohm = 1000000;
+const long RST3_Ohm = 330000;
+const long RST4_Ohm = 560000;
+const long RST5_Ohm = 330000;
+const long RST6_Ohm = 120000;
 unsigned long SD_loginterval_ms = 200;
 unsigned long SD_lastlogtime_ms = 0;
 bool SD_ready = false;
@@ -87,12 +94,13 @@ struct HTUsensor {
 } htusensor0;
 
 // Prototyping
+void beginBMP(void);
 void printLCD(const char *str, int skiprows=0);
 void setLCDexpiry(unsigned long t_ms=3000);
 void updateBMP(struct BMPsensor *sensor);
 void updateD6F(struct D6Fsensor *sensor0, struct D6Fsensor *sensor1, struct D6Fsensor *sensor2);
 void updateHTU(struct HTUsensor *sensor);
-void updateSW4();
+void updateSW4(void);
 
 //------------------------------------------------------------------------------
 // Initialise attached devices
@@ -229,7 +237,7 @@ void setup() {
 //------------------------------------------------------------------------------
 
 void loop() {
-  Serial.println(d6favailable);
+
   //-------------------------------------
   // Try to initialise hotplugged sensors
   //-------------------------------------
@@ -262,31 +270,59 @@ void loop() {
   updateD6F(&d6fsensor0, &d6fsensor1, &d6fsensor2);
   updateHTU(&htusensor0);
   updateSW4();
-
+  // Find the voltage being sensed from the LiPo input
+  float vsense1_V = 3.3 * analogRead(VSENSE1) / 1023;
+  float vsense2_V = 3.3 * analogRead(VSENSE2) / 1023;
+  float vsense3_V = 3.3 * analogRead(VSENSE3) / 1023;
+  
   //-------------------------
   // Do all the mathsy stuffs
   //-------------------------
-  float Patm_Pa;
-  float RH_percent;
-  float T_C;
+  // Compute the original cell voltages
+  float cell1_V = (RST1_Ohm + RST2_Ohm) / RST2_Ohm * vsense1_V;
+  float cell2_V = (RST3_Ohm + RST4_Ohm) / RST4_Ohm * vsense2_V;
+  float cell3_V = (RST5_Ohm + RST6_Ohm) / RST6_Ohm * vsense3_V;
 
-  // Find a suitable candidate for static pressure
+  // If battery is about to die, warn the user!
+  if (
+    ((0.5 < cell1_V) && (cell1_V <= 3.73)) ||
+    ((0.5 < cell2_V) && (cell2_V <= 3.73)) ||
+    ((0.5 < cell3_V) && (cell3_V <= 3.73))
+    ) {
+    printLCD("LOBATT, TURN OFF");
+    while(1); // Make the program stuck on purpose
+  }
+  // Else if any of the cells have below 3.8 V and no warning has been sent yet
+  else if (
+    ((0.5 < cell1_V) && (cell1_V <= 3.8) && (lowbattflag == false)) ||
+    ((0.5 < cell2_V) && (cell2_V <= 3.8) && (lowbattflag == false)) ||
+    ((0.5 < cell3_V) && (cell3_V <= 3.8) && (lowbattflag == false))
+    ) {
+    printLCD("*LOBATT WARNING*");
+    setLCDexpiry(20000);  // 20 seconds of warning
+  }
+  // Else if all the batteries are above 3.8 V, set lowbattflag to false
+  else if (((3.8 < cell1_V) && (3.8 < cell3_V) && (3.8 < cell3_V) && (lowbattflag == true))) {
+    lowbattflag = false;
+  }
+
+  // Assign values to air data quantities, using defaults if needed
+  float Patm_Pa, RH_percent, T_C;
+  // ATMOSPHERIC PRESSURE
   if (!isnan(bmpsensor0.P_Pa)) {
     Patm_Pa = bmpsensor0.P_Pa;
   }
   else {
     Patm_Pa = 101325.0; // Assign sea-level conditions
   }
-
-  // Find the a suitable candidate for relative humidity
+  // ATMOSPHERIC RELATIVE HUMIDITY
   if (!isnan(htusensor0.RH)) {
     RH_percent = htusensor0.RH;
   }
   else {
     RH_percent = 40;  // Assign some humidity I chose
   }
-
-  // Find the a suitable candidate for temperature
+  // ATMOSPHERIC TEMPERATURE
   if (!isnan(htusensor0.T_C)) {
     T_C = htusensor0.T_C;
   }
@@ -553,7 +589,7 @@ void loop() {
 // Support Functions
 //------------------------------------------------------------------------------
 
-void beginBMP()
+void beginBMP(void)
 {
   if (bmp.begin()) {
     printLCD("BMP280    [ OK ]");
@@ -710,7 +746,7 @@ void updateHTU(struct HTUsensor *sensor)
   sensor->T_C = htu.readTemperature();
 }
 
-void updateSW4()
+void updateSW4(void)
 {
   // If SW4 (held-high) falls to ground, record falling edge
   if (digitalRead(SW4_PUSH) == LOW) {
