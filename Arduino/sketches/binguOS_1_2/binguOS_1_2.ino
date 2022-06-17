@@ -1,4 +1,4 @@
-/* binguOS, written by Yaseen Reza 16/06/2022 */
+/* binguOS, written by Yaseen Reza 17/06/2022 */
 //-----------------------------------------------------------------------------
 // DEPENDENCIES
 //-----------------------------------------------------------------------------
@@ -14,6 +14,7 @@
 #include <Adafruit_MPU6050.h>   // 6 DoF Acc/gyro sensor (w/ temperature)
 #include <Adafruit_VL53L1X.h>   // LIDAR altimeter sensor (w/ temperature)
 #include <Omron_D6FPH.h>        // Dynamic pressure sensor (w/ temperature)
+#include <SimpleKalmanFilter.h> // Uni-dimensional Kalman filtering
 #include <TinyGPSPlus.h>        // Global Positioning System
 
 /* Import custom */
@@ -76,6 +77,8 @@ const int SDlograte_Hz = 4;
 const int LCDcolumns = 16;
 const int LCDrows = 1;
 const int GPSbaudrate = 4800;
+const float D6F_mu = 3; // Measurement uncertainty (and seed for estimation uncertainty)
+const float D6F_pv = 0.8;  // Process Variance 0.001~1, how fast the measurement moves 
 
 //-----------------------------------------------------------------------------
 // DEFINITIONS - Global variables and functions
@@ -102,7 +105,15 @@ byte char_alpha[8] = {
   B01101,
   B00000,
 };
-
+byte char_beta[8] = {
+  B01100,
+  B10010,
+  B11110,
+  B10001,
+  B11110,
+  B10000,
+  B10000,
+};
 
 /* Custom datatypes */
 struct sensordata_P {
@@ -126,6 +137,7 @@ Adafruit_HTU21DF htu;
 Adafruit_MPU6050 mpu;
 Adafruit_VL53L1X vl5;
 File datalog;
+SimpleKalmanFilter KF_D6Fq_Pa(D6F_mu, D6F_mu, D6F_pv);
 LiquidCrystal lcd(
   pin_LCD_RS, pin_LCD_EN, pin_LCD_D4,
   pin_LCD_D5, pin_LCD_D6, pin_LCD_D7
@@ -146,6 +158,7 @@ void setup() {
   Serial.begin(115200);
   lcd.begin(LCDcolumns, LCDrows);
   lcd.createChar(0, char_alpha);
+  lcd.createChar(1, char_beta);
 
   // Setup GPS up with a smart timer for the splash screen
   ss.begin(GPSbaudrate);
@@ -200,7 +213,7 @@ void loop() {
   // Other calculations
   float Patm_Pa, Tatm_C, RH_percent;
   Patm_Pa = data_P0.P_Pa;
-  Tatm_C = data_P0.Tpackage_C - 9.0;
+  Tatm_C = data_P0.Tpackage_C - 8.3; /* calibration guess lol*/
   RH_percent = data_RH0.RH_percent;
   
   float vias_mps = pow(2 * q_Pa / rhoSL_kgpm3, 0.5);
@@ -240,7 +253,26 @@ void loop() {
       datalog.print("System VBATTcell2[V] ");
       datalog.print(battCells_V[2]);
       datalog.print(",");
-  
+
+      datalog.print("Airdata rho[kg/m3] ");
+      datalog.print(rhoatm_kgpm3);
+      datalog.print(",");
+      datalog.print("Airdata T[C] ");
+      datalog.print(Tatm_C);
+      datalog.print(",");
+      datalog.print("Airdata AoA[deg] ");
+      datalog.print(degrees(AoA_rad));
+      datalog.print(",");
+      datalog.print("Airdata AoS[deg] ");
+      datalog.print(degrees(AoS_rad));
+      datalog.print(",");
+      datalog.print("Airdata VCAS[m/s] ");
+      datalog.print(vcas_mps);
+      datalog.print(",");
+      datalog.print("Airdata VTAS[m/s] ");
+      datalog.print(vtas_mps);
+      datalog.print(",");
+
       datalog.print("BMP280_0 P[Pa] ");
       datalog.print(data_P0.P_Pa);
       datalog.print(", ");
@@ -293,6 +325,8 @@ void loop() {
 
   // If a message sent with high priority has expired, draw the homescreen
   if (tlast_cyclestart_ms > tnext_LCDexpiry_ms) {
+
+    lcd.clear();
 
     // Display airspeed
     char displayvtas_mps[4];
@@ -560,15 +594,15 @@ void updatePitotSolution(sensordata_q sd0, sensordata_q sd1, sensordata_q sd2, f
   float Sigmaq_Pa = 0;
   int nsdvalid = 0;
   if (!isnan(sd0.q_Pa)) {
-    Sigmaq_Pa += sd0.q_Pa;
+    Sigmaq_Pa += KF_D6Fq_Pa.updateEstimate(sd0.q_Pa);
     ++nsdvalid;
   }
   if (!isnan(sd1.q_Pa)) {
-    Sigmaq_Pa += sd1.q_Pa;
+    Sigmaq_Pa += KF_D6Fq_Pa.updateEstimate(sd1.q_Pa);
     ++nsdvalid;
   }
   if (!isnan(sd2.q_Pa)) {
-    Sigmaq_Pa += sd2.q_Pa;
+    Sigmaq_Pa += KF_D6Fq_Pa.updateEstimate(sd2.q_Pa);
     ++nsdvalid;
   }
   if (nsdvalid == 0) {
@@ -584,30 +618,35 @@ void updatePitotSolution(sensordata_q sd0, sensordata_q sd1, sensordata_q sd2, f
     return;
   }
 
-  // Resolve dynamic pressures into vars defined in Yaseen's derivation
-  double varA = sd0.q_Pa * cos(sd1.offsetY_rad) * cos(sd1.offsetX_rad);
-  varA = varA - sd1.q_Pa * cos(sd0.offsetY_rad) * cos(sd0.offsetX_rad);
-  
-  double varB = sd1.q_Pa * cos(sd0.offsetY_rad) * sin(sd0.offsetX_rad);
-  varB = varB - sd0.q_Pa * cos(sd1.offsetY_rad) * sin(sd1.offsetX_rad);
-  
-  double varC = sd1.q_Pa * sin(sd0.offsetY_rad) * cos(sd0.offsetX_rad);
-  varC = varC - sd0.q_Pa * sin(sd1.offsetY_rad) * cos(sd1.offsetX_rad);
-  
-  double varD = sd1.q_Pa * sin(sd0.offsetY_rad) * sin(sd0.offsetX_rad);
-  varD = varD - sd0.q_Pa * sin(sd1.offsetY_rad) * sin(sd1.offsetX_rad);
-  
-  double varE = sd0.q_Pa * cos(sd2.offsetY_rad) * cos(sd2.offsetX_rad);
-  varE = varE - sd2.q_Pa * cos(sd0.offsetY_rad) * cos(sd0.offsetX_rad);
-  
-  double varF = sd2.q_Pa * cos(sd0.offsetY_rad) * sin(sd0.offsetX_rad);
-  varF = varF - sd0.q_Pa * cos(sd2.offsetY_rad) * sin(sd2.offsetX_rad);
+  // Kalman filter the pressures and use the smoother estimates
+  float est0_q_Pa = KF_D6Fq_Pa.updateEstimate(sd0.q_Pa);
+  float est1_q_Pa = KF_D6Fq_Pa.updateEstimate(sd1.q_Pa);
+  float est2_q_Pa = KF_D6Fq_Pa.updateEstimate(sd2.q_Pa);
 
-  double varG = sd2.q_Pa * sin(sd0.offsetY_rad) * cos(sd0.offsetX_rad);
-  varG = varG - sd0.q_Pa * sin(sd2.offsetY_rad) * cos(sd2.offsetX_rad);
+  // Resolve dynamic pressures into vars defined in Yaseen's derivation
+  double varA = est0_q_Pa * cos(sd1.offsetY_rad) * cos(sd1.offsetX_rad);
+  varA = varA - est1_q_Pa * cos(sd0.offsetY_rad) * cos(sd0.offsetX_rad);
   
-  double varH = sd2.q_Pa * sin(sd0.offsetY_rad) * sin(sd0.offsetX_rad);
-  varH = varH - sd0.q_Pa * sin(sd2.offsetY_rad) * sin(sd2.offsetX_rad);
+  double varB = est1_q_Pa * cos(sd0.offsetY_rad) * sin(sd0.offsetX_rad);
+  varB = varB - est0_q_Pa * cos(sd1.offsetY_rad) * sin(sd1.offsetX_rad);
+  
+  double varC = est1_q_Pa * sin(sd0.offsetY_rad) * cos(sd0.offsetX_rad);
+  varC = varC - est0_q_Pa * sin(sd1.offsetY_rad) * cos(sd1.offsetX_rad);
+  
+  double varD = est1_q_Pa * sin(sd0.offsetY_rad) * sin(sd0.offsetX_rad);
+  varD = varD - est0_q_Pa * sin(sd1.offsetY_rad) * sin(sd1.offsetX_rad);
+  
+  double varE = est0_q_Pa * cos(sd2.offsetY_rad) * cos(sd2.offsetX_rad);
+  varE = varE - est2_q_Pa * cos(sd0.offsetY_rad) * cos(sd0.offsetX_rad);
+  
+  double varF = est2_q_Pa * cos(sd0.offsetY_rad) * sin(sd0.offsetX_rad);
+  varF = varF - est0_q_Pa * cos(sd2.offsetY_rad) * sin(sd2.offsetX_rad);
+
+  double varG = est2_q_Pa * sin(sd0.offsetY_rad) * cos(sd0.offsetX_rad);
+  varG = varG - est0_q_Pa * sin(sd2.offsetY_rad) * cos(sd2.offsetX_rad);
+  
+  double varH = est2_q_Pa * sin(sd0.offsetY_rad) * sin(sd0.offsetX_rad);
+  varH = varH - est0_q_Pa * sin(sd2.offsetY_rad) * sin(sd2.offsetX_rad);
 
   // Solve quadratic formula for +- solutions to Angle of Sideslip
   double qA = varD * varF - varB * varH;
@@ -626,7 +665,7 @@ void updatePitotSolution(sensordata_q sd0, sensordata_q sd1, sensordata_q sd2, f
   AoA_rad = atan((varA - tan(AoS_rad) * varB) / (varC - tan(AoS_rad) * varD));
 
   // True dynamic pressure is recovered by correcting for AoA/AoS/offset errors
-  qtrue_Pa = sd0.q_Pa;
+  qtrue_Pa = est0_q_Pa;
   qtrue_Pa *= 1 / cos(AoA_rad + sd0.offsetY_rad);
   qtrue_Pa *= 1 / cos(AoS_rad + sd0.offsetX_rad);
 }
@@ -637,8 +676,14 @@ void updateSDreadwrite(void)
   // If S4's flipflop state is false, close any files and leave the function
   getS4FlipFlop();
   if (!flag_S4flipflop) {
-    if (datalog)
+    if (strlen(datalog.name()) > 0) {
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print(">");
+      lcd.print(datalog.name());
       datalog.close();
+      setDisplayExpiry(3000);
+    }
     return;
   }
 
