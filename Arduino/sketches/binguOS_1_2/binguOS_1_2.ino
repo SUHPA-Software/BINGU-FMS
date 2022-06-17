@@ -87,7 +87,8 @@ bool flag_SDready = false;
 bool flag_S4fallingedge = false;
 bool flag_S4flipflop = false;
 unsigned long tlast_cyclestart_ms;
-unsigned long tlast_SDflushed_ms;
+unsigned long tlast_SDflushed_ms = 0;
+unsigned long tlast_SDwritten_ms = 0;
 unsigned long tnext_LCDexpiry_ms;
 unsigned long tnext_LED2expiry_ms;
 
@@ -192,7 +193,7 @@ void loop() {
   // Run data processing routines
   float AoA_rad, AoS_rad, q_Pa;
   updateIconBattery(battCells_V);
-  updateIconDroplet(data_RH0.RH_percent);
+  updateIconDatalogging();
   updatePitotSolution(data_q0, data_q1, data_q2, AoA_rad, AoS_rad, q_Pa);
   updateSDreadwrite();
 
@@ -217,15 +218,102 @@ void loop() {
   float Machnumber = pow(2.0 / (gammaatm - 1.0) * (pow(1 + q_Pa / Patm_Pa, (gammaatm - 1.0) / gammaatm) - 1.0), 0.5);
   float vtas_mps = Machnumber * speedofsound_mps;
 
-  lcd.setCursor(0, 0);
-  char displayvtas_mps[4];
-  zeroPadFloat(displayvtas_mps, sizeof(displayvtas_mps), vtas_mps, 1);
-  lcd.print("V");
-  lcd.print(displayvtas_mps);
-  // Draw icons
-  lcd.setCursor(13, 0);
-  lcd.write(byte(3)); // Humidity
-  lcd.write(byte(1)); // Battery
+  // Write to the SD card if...
+  if (
+    (flag_SDready == true) && // ...the SD card is ready to write to
+    (flag_S4flipflop == true) // ...the user wants to write to SD
+    ) {
+
+    // If enough time has passed since the last log, write data to SD
+    if (tlast_SDwritten_ms + 1000 / SDlograte_Hz < tlast_cyclestart_ms) {
+
+      // Log all of the data!
+      datalog.print("System Uptime[ms] ");
+      datalog.print(tlast_cyclestart_ms);
+      datalog.print(",");
+      datalog.print("System VBATTcell0[V] ");
+      datalog.print(battCells_V[0]);
+      datalog.print(",");
+      datalog.print("System VBATTcell1[V] ");
+      datalog.print(battCells_V[1]);
+      datalog.print(",");
+      datalog.print("System VBATTcell2[V] ");
+      datalog.print(battCells_V[2]);
+      datalog.print(",");
+  
+      datalog.print("BMP280_0 P[Pa] ");
+      datalog.print(data_P0.P_Pa);
+      datalog.print(", ");
+      datalog.print("BMP280_0 Tpackage[C] ");
+      datalog.print(data_P0.Tpackage_C);
+      datalog.print(", ");
+  
+      datalog.print("HTU21DF_0 RH[%] ");
+      datalog.print(data_RH0.RH_percent);
+      datalog.print(", ");
+      datalog.print("HTU21DF_0 Tpackage[C] ");
+      datalog.print(data_RH0.Tpackage_C);
+      datalog.print(", ");
+  
+      datalog.print("D6F-PH0025AD1_0 q[Pa] ");
+      datalog.print(data_q0.q_Pa);
+      datalog.print(", ");
+      datalog.print("D6F-PH0025AD1_0 Tpackage[C] ");
+      datalog.print(data_q0.Tpackage_C);
+      datalog.print(", ");
+      datalog.print("D6F-PH0025AD1_1 q[Pa] ");
+      datalog.print(data_q1.q_Pa);
+      datalog.print(", ");
+      datalog.print("D6F-PH0025AD1_1 Tpackage[C] ");
+      datalog.print(data_q1.Tpackage_C);
+      datalog.print(", ");
+      datalog.print("D6F-PH0025AD1_2 q[Pa] ");
+      datalog.print(data_q2.q_Pa);
+      datalog.print(", ");
+      datalog.print("D6F-PH0025AD1_2 Tpackage[C] ");
+      datalog.print(data_q2.Tpackage_C);
+      datalog.print(", ");
+  
+      datalog.println(";");
+    }
+
+    // Every 10 seconds, flush any data to the SD card (improves SD lifetime)
+    if (tlast_SDflushed_ms + 10000 < tlast_cyclestart_ms) {
+      datalog.flush();
+    }
+
+    // Every 4 seconds, blink the green LED to indicate SD activity
+    if (tnext_LED2expiry_ms < tlast_cyclestart_ms) {
+      digitalWrite(pin_LED2, HIGH);
+      delay(25);
+      digitalWrite(pin_LED2, LOW);
+      tnext_LED2expiry_ms = tlast_cyclestart_ms + 4000;
+    }
+  }
+
+  // If a message sent with high priority has expired, draw the homescreen
+  if (tlast_cyclestart_ms > tnext_LCDexpiry_ms) {
+
+    // Display airspeed
+    char displayvtas_mps[4];
+    zeroPadFloat(displayvtas_mps, sizeof(displayvtas_mps), vtas_mps, 1);
+    lcd.setCursor(0, 0);
+    lcd.print("V");
+    lcd.print(displayvtas_mps);
+
+    // Display angle of attack
+    char displayaoa_deg[4];
+    zeroPadFloat(displayaoa_deg, sizeof(displayaoa_deg), degrees(AoA_rad), 1);
+    lcd.setCursor(5, 0);
+    lcd.write(byte(0)); // Alpha
+    lcd.print(displayaoa_deg);
+
+    // Draw extra icons
+    lcd.setCursor(14, 0);
+    lcd.write(byte(3)); // SD card
+    lcd.write(byte(1)); // Battery
+  }
+  
   
   delay(50);
 }
@@ -255,6 +343,7 @@ byte * i2cscan(void)
   return i2cavailable;
 }
 
+
 void calcPitotpositions(sensordata_q &sd0, sensordata_q &sd1, sensordata_q &sd2)
 {
   // For a unit-length pitot arm, the distance of tip from origin is the bloom height
@@ -266,6 +355,7 @@ void calcPitotpositions(sensordata_q &sd0, sensordata_q &sd1, sensordata_q &sd2)
   sd2.offsetY_rad = asin(bloomheight * sin((2 * pi * 2 / 3) + d6f_rotoffset_rad));
   sd2.offsetX_rad = asin(bloomheight * cos((2 * pi * 2 / 3) + d6f_rotoffset_rad));
 }
+
 
 float calcPvapoursaturated(float T_C)
 {
@@ -281,6 +371,7 @@ float calcPvapoursaturated(float T_C)
   }
   return 610.78 * pow(e, varA * T_C / (varB + T_C));  
 }
+
 
 float * getBatteryVoltage(void)
 {
@@ -299,6 +390,7 @@ float * getBatteryVoltage(void)
   return battCells_V;
 }
 
+
 void getPitotPressure(sensordata_q &sd, int choice012)
 {
   // Set the default choice of D6F sensor to read from
@@ -313,11 +405,13 @@ void getPitotPressure(sensordata_q &sd, int choice012)
       digitalWrite(pin_S2, HIGH);
       break;
     case 2:
+      digitalWrite(pin_S2, HIGH);
       digitalWrite(pin_S3, HIGH);
       break;
     default:
       Serial.println("Valid choices for getPitotPressure choice012 = [0, 1, 2]");
       break;
+    
   }
 
   // Read the selected sensor
@@ -335,12 +429,14 @@ void getPitotPressure(sensordata_q &sd, int choice012)
   digitalWrite(pin_S3, LOW);
 }
 
+
 void getRelativeHumidity(sensordata_RH &sd)
 {
   // Save humidity and temperature data
   sd.RH_percent = htu.readHumidity();
   sd.Tpackage_C = htu.readTemperature();
 }
+
 
 void getS4FlipFlop(void)
 {
@@ -356,6 +452,7 @@ void getS4FlipFlop(void)
   }
 }
 
+
 void getStaticPressure(sensordata_P &sd)
 {
   float pressure = bmp.readPressure();
@@ -370,6 +467,14 @@ void getStaticPressure(sensordata_P &sd)
     sd.Tpackage_C = NAN;
   }
 }
+
+
+void setDisplayExpiry(unsigned long t_ms)
+{
+  // Set a system time after which the homescreen may resume
+  tnext_LCDexpiry_ms = millis() + t_ms;
+}
+
 
 void updateIconBattery(float battCells_V[])
 {
@@ -413,43 +518,41 @@ void updateIconBattery(float battCells_V[])
   lcd.createChar(1, char_battery);
 }
 
-void updateIconDroplet(float RH_percent)
-{
-  byte char_droplet[8];
-  // Empty and full icons
-  byte char_droplet0[8] = {
-    B00100,
-    B01100,
-    B01010,
-    B11010,
-    B10001,
-    B10001,
+void updateIconDatalogging(void) {
+  byte char_datalogging[8];
+  // Inactive and active icons
+  byte char_datalogging0[8] = {
+    B11110,
+    B11111,
+    B01110,
+    B10101,
+    B11011,
+    B10101,
     B01110,
   };
-  byte char_droplet1[8] = {
-    B00100,
-    B01100,
-    B01110,
+  byte char_datalogging1[8] = {
+    B11110,
+    B11111,
     B11110,
     B11111,
     B11111,
-    B01110,
+    B10001,
+    B11111,
   };
-
   // Draw a pretty icon, starting with the empty version
   // Note: char_x's size is 8 (7 element array + terminator)
   // Note: sizeof(char_x)-n is the number of rows to be modified
-  for (unsigned int i = 0; i < sizeof(char_droplet)-1; ++i) {
-    char_droplet[i] = char_droplet0[i];
-  }
-  for (int i = 0; i < 5; ++i) {
-    if (RH_percent >= 100 - (i + 1) * 20) {
-      char_droplet[i+2] = char_droplet1[i+2];
+  for (unsigned int i = 0; i < sizeof(char_datalogging)-1; ++i) {
+    if (flag_SDready == false) {
+      char_datalogging[i] = char_datalogging0[i];
     }
-
-  }    
-  lcd.createChar(3, char_droplet);
+    else {
+      char_datalogging[i] = char_datalogging1[i];
+    }
+  }
+  lcd.createChar(3, char_datalogging);
 }
+
 
 void updatePitotSolution(sensordata_q sd0, sensordata_q sd1, sensordata_q sd2, float &AoA_rad, float &AoS_rad, float &qtrue_Pa)
 {
@@ -528,6 +631,7 @@ void updatePitotSolution(sensordata_q sd0, sensordata_q sd1, sensordata_q sd2, f
   qtrue_Pa *= 1 / cos(AoS_rad + sd0.offsetX_rad);
 }
 
+
 void updateSDreadwrite(void)
 {
   // If S4's flipflop state is false, close any files and leave the function
@@ -573,6 +677,7 @@ void updateSDreadwrite(void)
     }
   }
 }
+
 
 void zeroPadFloat(char* targetarray, int targetarraysize, float float2pad, int dpposition)
 {
