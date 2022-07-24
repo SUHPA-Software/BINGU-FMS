@@ -1,0 +1,56 @@
+#######################################
+# Syntax Coloring Map for binguOS
+#######################################
+
+#######################################
+# Datatypes (KEYWORD1)
+#######################################
+
+Adafruit_BMP280	KEYWORD1
+Adafruit_BNO055	KEYWORD1
+Adafruit_HTU21DF	KEYWORD1
+Adafruit_MPU6050	KEYWORD1
+Adafruit_VL53L1X	KEYWORD1
+Omron_D6FPH	KEYWORD1
+sensordata_GPS	KEYWORD1
+sensordata_P	KEYWORD1
+sensordata_q	KEYWORD1
+sensordata_RH	KEYWORD1
+sensordata_s	KEYWORD1
+
+#######################################
+# Methods and Functions (KEYWORD2)
+#######################################
+
+i2cscan	KEYWORD2
+calcPitotpositions	KEYWORD2
+calcPvapoursaturated	KEYWORD2
+getBatteryVoltage	KEYWORD2
+getGPSdata	KEYWORD2
+getLIDARdistance	KEYWORD2
+getPitotPressure	KEYWORD2
+getRelativeHumidity	KEYWORD2
+getS4FlipFlop	KEYWORD2
+getStaticPressure	KEYWORD2
+setDisplayExpiry	KEYWORD2
+smartDelay	KEYWORD2
+updateIconBattery	KEYWORD2
+updateIconDatalogging	KEYWORD2
+updatePitotSolution	KEYWORD2
+updateSDreadwrite	KEYWORD2
+zeroPadFloat	KEYWORD2
+
+#######################################
+# Constants (LITERAL1)
+#######################################
+
+e	LITERAL1
+pi	LITERAL1
+R0_JpKpmol	LITERAL1
+Wvapour_kgpmol	LITERAL1
+Wdryair_kgpmol	LITERAL1
+PSL_Pa	LITERAL1
+TSL_C	LITERAL1
+rhoSL_kgpm3	LITERAL1
+hSL_m	LITERAL1
+
