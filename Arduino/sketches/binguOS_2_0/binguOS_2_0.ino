@@ -4,7 +4,6 @@
 // DEPENDENCIES
 //-----------------------------------------------------------------------------
 /* Import built-ins */
-#include <LiquidCrystal.h>      // For the LCD display
 #include <SD.h>                 // For R/W operations
 #include <Wire.h>               // For I2C enabled devices
 
@@ -38,17 +37,17 @@ const float rhoSL_kgpm3 = 1.225;
 const float hSL_m = 0;
 
 /* Arduino pin definitions (BINGU Schematic v0.4.pdf) */
-const int pin_RX0 = RXD;              // Pin 30
-const int pin_TX0 = TXD;              // Pin 31
+const int pin_RX0 = 30;
+const int pin_TX0 = 31;
 const int pin_RX1 = 12;
 const int pin_TX1 = 13;
 const int pin_LED2 = 11;
 const int pin_SDCS = 23;              // CS1
 //TODO remove most of airspeed calculation
 const int pin_LED = LED_BUILTIN;      // Pin 13
-const int pin_V1S = ADC7;             // Pin 22
-const int pin_V2S = ADC6;             // Pin 19
-const int pin_V3S = ADC3;             // Pin 26
+const int pin_V1S = 22;
+const int pin_V2S = 19;
+const int pin_V3S = 26;
 const int pin_SDA0 = SDA;             // Pin 27
 const int pin_SCL0 = SCL;             // Pin 28
 const int pin_S4 = 32;
@@ -151,10 +150,6 @@ Adafruit_VL53L1X vl5;
 File datalog;
 SimpleKalmanFilter KF_D6Fq_Pa(D6F_mu, D6F_mu, D6F_pv);
 SimpleKalmanFilter KF_VL5z_m(VL5_mu, VL5_mu, VL5_pv);
-LiquidCrystal lcd(
-  pin_LCD_RS, pin_LCD_EN, pin_LCD_D4,
-  pin_LCD_D5, pin_LCD_D6, pin_LCD_D7
-  );
 Omron_D6FPH d6f;
 TinyGPSPlus gps;
 
@@ -166,19 +161,14 @@ TinyGPSPlus gps;
 //-----------------------------------------------------------------------------
 void setup() {
 
-  // Start serial debug connection and LCD interface
+  // Start serial debug connection
   Serial.begin(115200);
-  lcd.begin(LCDcolumns, LCDrows);
-  lcd.createChar(0, char_alpha);
-  lcd.createChar(1, char_beta);
 
   // Start a serial connection for the GPS module
   Serial1.begin(GPSBaud);
 
   // Setup digital I/O pins
   pinMode(pin_LED2, OUTPUT);
-  pinMode(pin_S2, OUTPUT);
-  pinMode(pin_S3, OUTPUT);
   pinMode(pin_LED, OUTPUT);
   pinMode(pin_V1S, INPUT);  // Strictly speaking, used for analog input
   pinMode(pin_V2S, INPUT);  // Strictly speaking, used for analog input
@@ -189,19 +179,13 @@ void setup() {
   flag_SDready = SD.begin(pin_SDCS);
 
   // Setup I2C communication
-  Wire.setSCL(pin_SCL0);
-  Wire.setSDA(pin_SDA0);
   Wire.begin();
   Wire.setClock(400000);
 
   vl5begin();
   bmp.begin(BMP280_ADDRESS_ALT, BMP280_CHIPID);
-  digitalWrite(pin_S2, LOW);
-  digitalWrite(pin_S3, LOW);
   d6f.begin(MODEL_0025AD1);
-  digitalWrite(pin_S2, HIGH);
   d6f.begin(MODEL_0025AD1);
-  digitalWrite(pin_S3, HIGH);
   d6f.begin(MODEL_0025AD1);
   htu.begin();
 
