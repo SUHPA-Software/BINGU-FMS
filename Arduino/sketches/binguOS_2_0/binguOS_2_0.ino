@@ -44,10 +44,9 @@ const int pin_RX0 = 30;
 const int pin_TX0 = 31;
 const int pin_RX1 = 12;
 const int pin_TX1 = 13;
-const int pin_LED2 = 11;
 const int pin_SDCS = 23;              // CS1
 //TODO remove most of airspeed calculation
-const int pin_LED = LED_BUILTIN;      // Pin 13
+const int pin_LED = 11;
 const int pin_V1S = 22;
 const int pin_V2S = 19;
 const int pin_V3S = 26;
@@ -68,7 +67,6 @@ constexpr float d6f_halfangle_rad radians(9);
 constexpr float d6f_rotoffset_rad radians(210);
 
 /* BinguOS software definitions */
-const char splash[17] = "binguOS V2.0";
 const int SDlograte_Hz = 4;
 const float D6F_mu = 3; // Measurement uncertainty (and seed for estimation uncertainty)
 const float D6F_pv = 0.8;  // Process Variance 0.001~1, how fast the measurement moves
@@ -149,7 +147,6 @@ void setup() {
   #endif //DEBUG_ENABLE
 
   // Setup digital I/O pins
-  pinMode(pin_LED2, OUTPUT);
   pinMode(pin_LED, OUTPUT);
   pinMode(pin_V1S, INPUT);  // Strictly speaking, used for analog input
   pinMode(pin_V2S, INPUT);  // Strictly speaking, used for analog input
@@ -320,11 +317,12 @@ void loop() {
       smartDelay(100);
     }
 
+    //TODO swap this for battery as SD activity light already implemented
     // Every 2 seconds, blink the green LED to indicate SD activity
     if (tnext_LED2expiry_ms < tlast_cyclestart_ms) {
-      digitalWrite(pin_LED2, HIGH);
+      digitalWrite(pin_LED, HIGH);
       smartDelay(25);
-      digitalWrite(pin_LED2, LOW);
+      digitalWrite(pin_LED, LOW);
       tnext_LED2expiry_ms = tlast_cyclestart_ms + 2000;
     }
   }
@@ -538,7 +536,7 @@ void getStaticPressure(sensordata_P &sd)
   float temperature = bmp.readTemperature();
   if ((pressure > 0) && (temperature < 179)) {
     // Save pressure and temperature data
-    sd.P_Pa = pressure;
+    sd.P_Pa = KF_D6Fq_Pa.updateEstimate(pressure);
     sd.Tpackage_C = temperature;
   }
   else {
