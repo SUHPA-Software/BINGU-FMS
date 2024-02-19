@@ -21,6 +21,9 @@
 //-----------------------------------------------------------------------------
 // DEFINITIONS - Global constants
 //-----------------------------------------------------------------------------
+#define DEBUG_ENABLE 1          //Determines whether to use the GPS module as they share SPI pins.
+                                //TODO bit-bang SPI for use on RX1, TX1 to allow GPS & debug
+
 /* Mathematical constants */
 const float e = 2.71828;
 const float pi = 3.141592;
@@ -67,8 +70,6 @@ constexpr float d6f_rotoffset_rad radians(210);
 /* BinguOS software definitions */
 const char splash[17] = "binguOS V2.0";
 const int SDlograte_Hz = 4;
-const int LCDcolumns = 16;
-const int LCDrows = 1;
 const float D6F_mu = 3; // Measurement uncertainty (and seed for estimation uncertainty)
 const float D6F_pv = 0.8;  // Process Variance 0.001~1, how fast the measurement moves
 const float VL5_mu = 800;
@@ -88,28 +89,7 @@ bool flag_VL53L1Xready = false;
 unsigned long tlast_cyclestart_ms;
 unsigned long tlast_SDflushed_ms = 0;
 unsigned long tlast_SDwritten_ms = 0;
-unsigned long tnext_LCDexpiry_ms;
 unsigned long tnext_LED2expiry_ms;
-
-/* Custom LCD characters */
-byte char_alpha[8] = {
-  B00000,
-  B01001,
-  B10101,
-  B10010,
-  B10010,
-  B01101,
-  B00000,
-};
-byte char_beta[8] = {
-  B01100,
-  B10010,
-  B11110,
-  B10001,
-  B11110,
-  B10000,
-  B10000,
-};
 
 /* Custom datatypes */
 struct sensordata_P {
@@ -121,7 +101,7 @@ struct sensordata_q {
   float Tpackage_C;       // Sensor package temperature
   float offsetX_rad;      // Sensor offset from the longitudinal axis in yaw
   float offsetY_rad;      // Sensor offset from the longitudinal axis in pitch
-} data_q0, data_q1, data_q2;
+} data_q0;
 struct sensordata_RH {
   float RH_percent;       // Relative humidity measurement
   float Tpackage_C;       // Sensor package temperature
@@ -160,12 +140,13 @@ TinyGPSPlus gps;
 // Setup - Run once
 //-----------------------------------------------------------------------------
 void setup() {
-
-  // Start serial debug connection
-  Serial.begin(115200);
-
-  // Start a serial connection for the GPS module
-  Serial1.begin(GPSBaud);
+  #if DEBUG_ENABLE
+    // Start serial debug connection
+    Serial.begin(115200);
+  #else //DEBUG_ENABLE
+    // Start a serial connection for the GPS module
+    Serial.begin(GPSBaud);
+  #endif //DEBUG_ENABLE
 
   // Setup digital I/O pins
   pinMode(pin_LED2, OUTPUT);
@@ -188,9 +169,6 @@ void setup() {
   d6f.begin(MODEL_0025AD1);
   d6f.begin(MODEL_0025AD1);
   htu.begin();
-
-  // Save cartesian coordinates of pitot positions from polar coordinate setup
-  calcPitotpositions(data_q0, data_q1, data_q2);
 }
 
 //-----------------------------------------------------------------------------
@@ -206,17 +184,10 @@ void loop() {
   // Read sensor data
   getGPSdata(data_GPS0);
   getLIDARdistance(data_s0);
-  getPitotPressure(data_q0, 0);
-  getPitotPressure(data_q1, 1);
-  getPitotPressure(data_q2, 2);
+  getPitotPressure(data_q0);
   getRelativeHumidity(data_RH0);
   getStaticPressure(data_P0);
   // Run data processing routines
-  float AoA_rad, AoS_rad, q_Pa;
-  updateIconBattery(battCells_V);
-  updateIconDatalogging();
-  updateIconGPS(data_GPS0.satellites);
-  updatePitotSolution(data_q0, data_q1, data_q2, AoA_rad, AoS_rad, q_Pa);
   updateSDreadwrite();
 
   // IMU calculations
@@ -230,7 +201,7 @@ void loop() {
   Tatm_C = data_P0.Tpackage_C - 8.3; /* calibration guess lol*/
   RH_percent = data_RH0.RH_percent;
   
-  float vias_mps = pow(2 * q_Pa / rhoSL_kgpm3, 0.5);
+  float vias_mps = pow(2 * data_q0.q_Pa / rhoSL_kgpm3, 0.5);
   float vcas_mps = vias_mps;
   float Pvapoursaturated_Pa = calcPvapoursaturated(Tatm_C);
   float Pvapour_Pa = Pvapoursaturated_Pa * (RH_percent / 100);
@@ -242,7 +213,7 @@ void loop() {
   float gammaatm = cpatm_JpKpkg / cvatm_JpKpkg;
   float rhoatm_kgpm3 = Patm_Pa / Ratm_JpKpkg / (Tatm_C + 273.15);
   float speedofsound_mps = pow(gammaatm * Ratm_JpKpkg * (Tatm_C + 273.15), 0.5);
-  float Machnumber = pow(2.0 / (gammaatm - 1.0) * (pow(1 + q_Pa / Patm_Pa, (gammaatm - 1.0) / gammaatm) - 1.0), 0.5);
+  float Machnumber = pow(2.0 / (gammaatm - 1.0) * (pow(1 + data_q0.q_Pa / Patm_Pa, (gammaatm - 1.0) / gammaatm) - 1.0), 0.5);
   float vtas_mps = Machnumber * speedofsound_mps;
 
   // Write to the SD card if...
@@ -274,12 +245,6 @@ void loop() {
       datalog.print("Airdata T[C] ");
       datalog.print(Tatm_C);
       datalog.print(",");
-      datalog.print("Airdata AoA[deg] ");
-      datalog.print(degrees(AoA_rad));
-      datalog.print(",");
-      datalog.print("Airdata AoS[deg] ");
-      datalog.print(degrees(AoS_rad));
-      datalog.print(",");
       datalog.print("Airdata VCAS[m/s] ");
       datalog.print(vcas_mps);
       datalog.print(",");
@@ -306,18 +271,6 @@ void loop() {
       datalog.print(",");
       datalog.print("D6F-PH0025AD1_0 Tpackage[C] ");
       datalog.print(data_q0.Tpackage_C);
-      datalog.print(",");
-      datalog.print("D6F-PH0025AD1_1 q[Pa] ");
-      datalog.print(data_q1.q_Pa);
-      datalog.print(",");
-      datalog.print("D6F-PH0025AD1_1 Tpackage[C] ");
-      datalog.print(data_q1.Tpackage_C);
-      datalog.print(",");
-      datalog.print("D6F-PH0025AD1_2 q[Pa] ");
-      datalog.print(data_q2.q_Pa);
-      datalog.print(",");
-      datalog.print("D6F-PH0025AD1_2 Tpackage[C] ");
-      datalog.print(data_q2.Tpackage_C);
       datalog.print(",");
 
       datalog.print("VL53L1X_0 s[m] ");
@@ -377,40 +330,10 @@ void loop() {
   }
 
   // If a message sent with high priority has expired, draw the homescreen
-  if (tlast_cyclestart_ms > tnext_LCDexpiry_ms) {
-
-    lcd.clear();
-
-    // Display airspeed
-    char displayvtas_mps[4];
-    zeroPadFloat(displayvtas_mps, sizeof(displayvtas_mps), vtas_mps, 1);
-    lcd.setCursor(0, 0);
-    lcd.print("V");
-    lcd.print(displayvtas_mps);
-
-    // Display angle of attack
-    char displayaoa_deg[3];
-    zeroPadFloat(displayaoa_deg, sizeof(displayaoa_deg), degrees(AoA_rad), 1);
-    lcd.setCursor(5, 0);
-    lcd.write(byte(0)); // Alpha
-    lcd.print(displayaoa_deg);
-
-    // Display altitude
-    char displayaltitude_m[4];
-    zeroPadFloat(displayaltitude_m, sizeof(displayaltitude_m), z_m, 1);
-    lcd.setCursor(9, 0);
-    lcd.print("z");
-    lcd.print(displayaltitude_m);
-
-    // Draw extra icons
-    lcd.setCursor(13, 0);
-    lcd.write(byte(4)); // GPS signal
-    lcd.write(byte(3)); // SD card
-    lcd.write(byte(2)); // Battery
-  }
+  //TODO draw LEDs
 
   // DEBUGGING PRINTS GO BELOW THIS POINT
-
+  #if DEBUG_ENABLE
   Serial.print("Satellites: ");
   Serial.print(data_GPS0.satellites);
   Serial.print(" Latitude: ");
@@ -419,6 +342,7 @@ void loop() {
   Serial.print(data_GPS0.lng, 10);
   Serial.print(" Seconds: ");
   Serial.println(data_GPS0.second);
+  #endif //DEBUG_ENABLE
 }
 
 //-----------------------------------------------------------------------------
@@ -447,25 +371,14 @@ byte * i2cscan(void)
 }
 
 
-void calcPitotpositions(sensordata_q &sd0, sensordata_q &sd1, sensordata_q &sd2)
-{
-  // For a unit-length pitot arm, the distance of tip from origin is the bloom height
-  float bloomheight = sin(d6f_halfangle_rad);
-  sd0.offsetY_rad = asin(bloomheight * sin((2 * pi * 0 / 3) + d6f_rotoffset_rad));
-  sd0.offsetX_rad = asin(bloomheight * cos((2 * pi * 0 / 3) + d6f_rotoffset_rad));
-  sd1.offsetY_rad = asin(bloomheight * sin((2 * pi * 1 / 3) + d6f_rotoffset_rad));
-  sd1.offsetX_rad = asin(bloomheight * cos((2 * pi * 1 / 3) + d6f_rotoffset_rad));
-  sd2.offsetY_rad = asin(bloomheight * sin((2 * pi * 2 / 3) + d6f_rotoffset_rad));
-  sd2.offsetX_rad = asin(bloomheight * cos((2 * pi * 2 / 3) + d6f_rotoffset_rad));
-}
-
-
 float calcPvapoursaturated(float T_C)
 {
   // Use Teten's equation to estimate the saturation pressure of vapour
   float varA = 17.27, varB = 237.3;
   if (T_C > 35) {
+    #if DEBUG_ENABLE
     Serial.println("calcPvapoursaturated not modelled for use in T_C > 35!");
+    #endif //DEBUG_ENABLE
   }
   else if (T_C < 0) {
     // Murray estimation for conditions below zero
@@ -582,29 +495,8 @@ void getLIDARdistance(sensordata_s &sd)
 }
 
 
-void getPitotPressure(sensordata_q &sd, int choice012)
+void getPitotPressure(sensordata_q &sd)
 {
-  // Set the default choice of D6F sensor to read from
-  digitalWrite(pin_S2, LOW);
-  digitalWrite(pin_S3, LOW);
-
-  // If 1 or 2 is selected in the input, change observed sensor
-  switch (choice012) {
-    case 0:
-      break;
-    case 1:
-      digitalWrite(pin_S2, HIGH);
-      break;
-    case 2:
-      digitalWrite(pin_S2, HIGH);
-      digitalWrite(pin_S3, HIGH);
-      break;
-    default:
-      Serial.println("Valid choices for getPitotPressure choice012 = [0, 1, 2]");
-      break;
-  }
-  smartDelay(2);  // Delay between switching GPIO and 
-
   // Read the selected sensor
   if (d6f.isConnected()) {
     sd.q_Pa = max(0, d6f.getPressure()); // Ignore negative pressures
@@ -614,11 +506,6 @@ void getPitotPressure(sensordata_q &sd, int choice012)
     sd.q_Pa = NAN;
     sd.Tpackage_C = NAN;
   }
-  smartDelay(2);
-
-  // Set all the pins back to low for consistency
-  digitalWrite(pin_S2, LOW);
-  digitalWrite(pin_S3, LOW);
 }
 
 
@@ -661,26 +548,23 @@ void getStaticPressure(sensordata_P &sd)
 }
 
 
-void setDisplayExpiry(unsigned long t_ms)
-{
-  // Set a system time after which the homescreen may resume
-  tnext_LCDexpiry_ms = millis() + t_ms;
-}
-
-
 // This custom version of delay() ensures that the gps object
 // is being "fed". Originally written by Mikal Hart
+#if DEBUG_ENABLE
+static void smartDelay(unsigned long ms) {delay(ms);}
+#else
 static void smartDelay(unsigned long ms)
 {
   unsigned long start = millis();
   do 
   {
-    while (Serial1.available())
-      gps.encode(Serial1.read());
+    while (Serial.available())
+      gps.encode(Serial.read());
   } while (millis() - start < ms);
 }
+#endif //DEBUG_ENABLE
 
-
+//TODO update primary LED flash
 void updateIconBattery(float battCells_V[])
 {
     byte char_battery[8];
@@ -721,193 +605,7 @@ void updateIconBattery(float battCells_V[])
       char_battery[i+1] = char_battery1[i+1];
     }
   }    
-  lcd.createChar(2, char_battery);
-}
-
-void updateIconDatalogging(void)
-{
-  byte char_datalogging[8];
-  // Inactive and active icons
-  byte char_datalogging0[8] = {
-    B11110,
-    B11111,
-    B01110,
-    B10101,
-    B11011,
-    B10101,
-    B01110,
-  };
-
-  byte char_datalogging1[8] = {
-    B11110,
-    B11111,
-    B11110,
-    B11111,
-    B11111,
-    B10001,
-    B11111,
-  };
-  
-  // Draw a pretty icon, starting with the empty version
-  // Note: char_x's size is 8 (7 element array + terminator)
-  // Note: sizeof(char_x)-n is the number of rows to be modified
-  for (unsigned int i = 0; i < sizeof(char_datalogging)-1; ++i) {
-    if (flag_SDready == false) {
-      char_datalogging[i] = char_datalogging0[i];
-    }
-    else {
-      char_datalogging[i] = char_datalogging1[i];
-    }
-  }
-  lcd.createChar(3, char_datalogging);
-}
-
-
-void updateIconGPS(int satellites)
-{
-  byte char_GPSconnection[8];
-  byte char_GPSconnection0[8] = {
-    B00001,
-    B00011,
-    B00101,
-    B01001,
-    B10001,
-    B10001,
-    B10001,
-  };
-  byte char_GPSconnection1[8] = {
-    B00001,
-    B00011,
-    B00101,
-    B01001,
-    B11001,
-    B11001,
-    B11001,
-  };
-  byte char_GPSconnection2[8] = {
-    B00001,
-    B00011,
-    B00101,
-    B01101,
-    B11101,
-    B11101,
-    B11101,
-  }; 
-  byte char_GPSconnection3[8] = {
-    B00001,
-    B00011,
-    B00111,
-    B01111,
-    B11111,
-    B11111,
-    B11111,
-  };
-  for (unsigned int i = 0; i < sizeof(char_GPSconnection)-1; ++i) {
-    switch (satellites) {
-    case -1:
-      char_GPSconnection[i] = char_GPSconnection0[i];
-      break;
-    case 0:
-      char_GPSconnection[i] = char_GPSconnection0[i];
-      break;
-    case 1:
-      char_GPSconnection[i] = char_GPSconnection1[i];
-      break;
-    case 2:
-      char_GPSconnection[i] = char_GPSconnection1[i];
-      break;
-    case 3:
-      char_GPSconnection[i] = char_GPSconnection2[i];
-      break;
-    default:
-      char_GPSconnection[i] = char_GPSconnection3[i];
-      break;
-    }
-  }
-  lcd.createChar(4, char_GPSconnection);
-}
-
-
-void updatePitotSolution(sensordata_q sd0, sensordata_q sd1, sensordata_q sd2, float &AoA_rad, float &AoS_rad, float &qtrue_Pa)
-{
-  // Return a qtrue_Pa value if any of the 3 sensors cannot be read
-  float Sigmaq_Pa = 0;
-  int nsdvalid = 0;
-  if (!isnan(sd0.q_Pa)) {
-    Sigmaq_Pa += KF_D6Fq_Pa.updateEstimate(sd0.q_Pa);
-    ++nsdvalid;
-  }
-  if (!isnan(sd1.q_Pa)) {
-    Sigmaq_Pa += KF_D6Fq_Pa.updateEstimate(sd1.q_Pa);
-    ++nsdvalid;
-  }
-  if (!isnan(sd2.q_Pa)) {
-    Sigmaq_Pa += KF_D6Fq_Pa.updateEstimate(sd2.q_Pa);
-    ++nsdvalid;
-  }
-  if (nsdvalid == 0) {
-    AoA_rad = NAN;
-    AoS_rad = NAN;
-    qtrue_Pa = NAN;
-    return;
-  }
-  else if (nsdvalid < 3) {
-    AoA_rad = NAN;
-    AoS_rad = NAN;
-    qtrue_Pa = Sigmaq_Pa / nsdvalid / cos(d6f_halfangle_rad); // Average q
-    return;
-  }
-
-  // Kalman filter the pressures and use the smoother estimates
-  float est0_q_Pa = KF_D6Fq_Pa.updateEstimate(sd0.q_Pa);
-  float est1_q_Pa = KF_D6Fq_Pa.updateEstimate(sd1.q_Pa);
-  float est2_q_Pa = KF_D6Fq_Pa.updateEstimate(sd2.q_Pa);
-
-  // Resolve dynamic pressures into vars defined in Yaseen's derivation
-  float varA = est0_q_Pa * cos(sd1.offsetY_rad) * cos(sd1.offsetX_rad);
-  varA = varA - est1_q_Pa * cos(sd0.offsetY_rad) * cos(sd0.offsetX_rad);
-  
-  float varB = est1_q_Pa * cos(sd0.offsetY_rad) * sin(sd0.offsetX_rad);
-  varB = varB - est0_q_Pa * cos(sd1.offsetY_rad) * sin(sd1.offsetX_rad);
-  
-  float varC = est1_q_Pa * sin(sd0.offsetY_rad) * cos(sd0.offsetX_rad);
-  varC = varC - est0_q_Pa * sin(sd1.offsetY_rad) * cos(sd1.offsetX_rad);
-  
-  float varD = est1_q_Pa * sin(sd0.offsetY_rad) * sin(sd0.offsetX_rad);
-  varD = varD - est0_q_Pa * sin(sd1.offsetY_rad) * sin(sd1.offsetX_rad);
-  
-  float varE = est0_q_Pa * cos(sd2.offsetY_rad) * cos(sd2.offsetX_rad);
-  varE = varE - est2_q_Pa * cos(sd0.offsetY_rad) * cos(sd0.offsetX_rad);
-  
-  float varF = est2_q_Pa * cos(sd0.offsetY_rad) * sin(sd0.offsetX_rad);
-  varF = varF - est0_q_Pa * cos(sd2.offsetY_rad) * sin(sd2.offsetX_rad);
-
-  float varG = est2_q_Pa * sin(sd0.offsetY_rad) * cos(sd0.offsetX_rad);
-  varG = varG - est0_q_Pa * sin(sd2.offsetY_rad) * cos(sd2.offsetX_rad);
-  
-  float varH = est2_q_Pa * sin(sd0.offsetY_rad) * sin(sd0.offsetX_rad);
-  varH = varH - est0_q_Pa * sin(sd2.offsetY_rad) * sin(sd2.offsetX_rad);
-
-  // Solve quadratic formula for +- solutions to Angle of Sideslip
-  float qA = varD * varF - varB * varH;
-  float qB = varA * varH + varB * varG - varC * varF - varD * varE;
-  float qC = varC * varE - varA * varG;
-  float AoS1_rad = atan(-qB + pow(pow(qB, 2)- 4 * qA * qC, 0.5)) / (2 * qA);
-  float AoS2_rad = atan(-qB - pow(pow(qB, 2)- 4 * qA * qC, 0.5)) / (2 * qA);
-
-  // Angle of Sideslip solution is that with the smaller magnitude
-  if (abs(AoS1_rad) < abs(AoS2_rad))
-    AoS_rad = AoS1_rad;
-  else
-    AoS_rad = AoS2_rad;
-
-  // Angle of Attack solution is easily solved for
-  AoA_rad = atan((varA - tan(AoS_rad) * varB) / (varC - tan(AoS_rad) * varD));
-
-  // True dynamic pressure is recovered by correcting for AoA/AoS/offset errors
-  qtrue_Pa = est0_q_Pa;
-  qtrue_Pa *= 1 / cos(AoA_rad + sd0.offsetY_rad);
-  qtrue_Pa *= 1 / cos(AoS_rad + sd0.offsetX_rad);
+  //lcd.createChar(2, char_battery);
 }
 
 
@@ -916,14 +614,6 @@ void updateSDreadwrite(void)
   // If S4's flipflop state is false, close any files and leave the function
   getS4FlipFlop();
   if (!flag_S4flipflop) {
-    if (strlen(datalog.name()) > 0) {
-      lcd.clear();
-      lcd.setCursor(0, 0);
-      lcd.print(">");
-      lcd.print(datalog.name());
-      datalog.close();
-      setDisplayExpiry(3000);
-    }
     return;
   }
 
