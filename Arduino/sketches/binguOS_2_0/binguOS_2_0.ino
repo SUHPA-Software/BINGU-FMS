@@ -223,88 +223,88 @@ void loop() {
     if (tlast_SDwritten_ms + 1000 / SDlograte_Hz < tlast_cyclestart_ms) {
 
       // Log all of the data!
-      datalog.print("System Uptime[ms] ");
+      datalog.print(F("System Uptime[ms] "));
       datalog.print(tlast_cyclestart_ms);
       datalog.print(",");
-      datalog.print("System VBATTcell0[V] ");
+      datalog.print(F("System VBATTcell0[V] "));
       datalog.print(battCells_V[0]);
       datalog.print(",");
-      datalog.print("System VBATTcell1[V] ");
+      datalog.print(F("System VBATTcell1[V] "));
       datalog.print(battCells_V[1]);
       datalog.print(",");
-      datalog.print("System VBATTcell2[V] ");
+      datalog.print(F("System VBATTcell2[V] "));
       datalog.print(battCells_V[2]);
       datalog.print(",");
 
-      datalog.print("Airdata rho[kg/m3] ");
+      datalog.print(F("Airdata rho[kg/m3] "));
       datalog.print(rhoatm_kgpm3);
       datalog.print(",");
-      datalog.print("Airdata T[C] ");
+      datalog.print(F("Airdata T[C] "));
       datalog.print(Tatm_C);
       datalog.print(",");
-      datalog.print("Airdata VCAS[m/s] ");
+      datalog.print(F("Airdata VCAS[m/s] "));
       datalog.print(vcas_mps);
       datalog.print(",");
-      datalog.print("Airdata VTAS[m/s] ");
+      datalog.print(F("Airdata VTAS[m/s] "));
       datalog.print(vtas_mps);
       datalog.print(",");
 
-      datalog.print("BMP280_0 P[Pa] ");
+      datalog.print(F("BMP280_0 P[Pa] "));
       datalog.print(data_P0.P_Pa);
       datalog.print(",");
-      datalog.print("BMP280_0 Tpackage[C] ");
+      datalog.print(F("BMP280_0 Tpackage[C] "));
       datalog.print(data_P0.Tpackage_C);
       datalog.print(",");
   
-      datalog.print("HTU21DF_0 RH[%] ");
+      datalog.print(F("HTU21DF_0 RH[%] "));
       datalog.print(data_RH0.RH_percent);
       datalog.print(",");
-      datalog.print("HTU21DF_0 Tpackage[C] ");
+      datalog.print(F("HTU21DF_0 Tpackage[C] "));
       datalog.print(data_RH0.Tpackage_C);
       datalog.print(",");
   
-      datalog.print("D6F-PH0025AD1_0 q[Pa] ");
+      datalog.print(F("D6F-PH0025AD1_0 q[Pa] "));
       datalog.print(data_q0.q_Pa);
       datalog.print(",");
-      datalog.print("D6F-PH0025AD1_0 Tpackage[C] ");
+      datalog.print(F("D6F-PH0025AD1_0 Tpackage[C] "));
       datalog.print(data_q0.Tpackage_C);
       datalog.print(",");
 
-      datalog.print("VL53L1X_0 s[m] ");
+      datalog.print(F("VL53L1X_0 s[m] "));
       datalog.print(data_s0.distance_m);
       datalog.print(",");
       
-      datalog.print("GPS_0 satellites[-] ");
+      datalog.print(F("GPS_0 satellites[-] "));
       datalog.print(data_GPS0.satellites);
       datalog.print(",");
-      datalog.print("GPS_0 latitude[deg] ");
+      datalog.print(F("GPS_0 latitude[deg] "));
       datalog.print(data_GPS0.lat, 10);
       datalog.print(",");
-      datalog.print("GPS_0 longitude[deg] ");
+      datalog.print(F("GPS_0 longitude[deg] "));
       datalog.print(data_GPS0.lng, 10);
       datalog.print(",");
-      datalog.print("GPS_0 year[-] ");
+      datalog.print(F("GPS_0 year[-] "));
       datalog.print(data_GPS0.year);
       datalog.print(",");
-      datalog.print("GPS_0 month[-] ");
+      datalog.print(F("GPS_0 month[-] "));
       datalog.print(data_GPS0.month);
       datalog.print(",");
-      datalog.print("GPS_0 day[-] ");
+      datalog.print(F("GPS_0 day[-] "));
       datalog.print(data_GPS0.day);
       datalog.print(",");
-      datalog.print("GPS_0 hours[-] ");
+      datalog.print(F("GPS_0 hours[-] "));
       datalog.print(data_GPS0.hour);
       datalog.print(",");
-      datalog.print("GPS_0 minutes[-] ");
+      datalog.print(F("GPS_0 minutes[-] "));
       datalog.print(data_GPS0.minute);
       datalog.print(",");
-      datalog.print("GPS_0 seconds[-] ");
+      datalog.print(F("GPS_0 seconds[-] "));
       datalog.print(data_GPS0.second);
       datalog.print(",");
-      datalog.print("GPS_0 speed[m/s] ");
+      datalog.print(F("GPS_0 speed[m/s] "));
       datalog.print(data_GPS0.speed, 2);
       datalog.print(",");
-      datalog.print("GPS_0 course[deg] ");
+      datalog.print(F("GPS_0 course[deg] "));
       datalog.print(data_GPS0.course, 1);
       datalog.print(",");
  
@@ -375,7 +375,7 @@ float calcPvapoursaturated(float T_C)
   float varA = 17.27, varB = 237.3;
   if (T_C > 35) {
     #if DEBUG_ENABLE
-    Serial.println("calcPvapoursaturated not modelled for use in T_C > 35!");
+    Serial.println(F("calcPvapoursaturated not modelled for use in T_C > 35!"));
     #endif //DEBUG_ENABLE
   }
   else if (T_C < 0) {
@@ -546,11 +546,11 @@ void getStaticPressure(sensordata_P &sd)
 }
 
 
-// This custom version of delay() ensures that the gps object
-// is being "fed". Originally written by Mikal Hart
 #if DEBUG_ENABLE
 static void smartDelay(unsigned long ms) {delay(ms);}
 #else
+// This custom version of delay() ensures that the gps object
+// is being "fed". Originally written by Mikal Hart
 static void smartDelay(unsigned long ms)
 {
   unsigned long start = millis();
@@ -562,48 +562,11 @@ static void smartDelay(unsigned long ms)
 }
 #endif //DEBUG_ENABLE
 
-//TODO update primary LED flash
-void updateIconBattery(float battCells_V[])
-{
-    byte char_battery[8];
-    // Empty and full icons
-    byte char_battery0[8] = {
-      B01110,
-      B11011,
-      B10001,
-      B10001,
-      B10001,
-      B10001,
-      B10001,
-    };
-    byte char_battery1[8] = {
-      B01110,
-      B11111,
-      B11111,
-      B11111,
-      B11111,
-      B11111,
-      B11111,
-    };
-
-  // Found some random equation online for 3S battery voltage vs capacity
-  auto fbatt3s_percent = [](float batt_V) { return (batt_V - 10.604848) / 0.019036; };
-  float batteryvoltage_V = battCells_V[0] + battCells_V[1] + battCells_V[2];
-  float battery_percent = fbatt3s_percent(batteryvoltage_V);
-
-  // Draw a pretty icon, starting with the empty version
-  // Note: char_x's size is 8 (7 element array + terminator)
-  // Note: sizeof(char_x)-n is the number of rows to be modified
-  int batterylevels = 6;
-  for (unsigned int i = 0; i < sizeof(char_battery)-1; ++i) {
-    char_battery[i] = char_battery0[i];
-  }
-  for (int i = 0; i < batterylevels; ++i) {
-    if (battery_percent >= 100 - (i + 1) * 75 / batterylevels) {
-      char_battery[i+1] = char_battery1[i+1];
-    }
-  }    
-  //lcd.createChar(2, char_battery);
+//TODO update primary LED to flash on low battery
+float getBatteryPerc(float battCells_V[]) {
+    // Yaseen found some random equation online for 3S battery voltage vs capacity
+    float batteryvoltage_V = battCells_V[0] + battCells_V[1] + battCells_V[2];
+    return (batteryvoltage_V - 10.604848) / 0.019036;
 }
 
 
@@ -649,58 +612,6 @@ void updateSDreadwrite(void)
       flag_S4flipflop = false;
     }
   }
-}
-
-
-void zeroPadFloat(char* targetarray, int targetarraysize, float float2pad, int dpposition)
-{
-  char absvaluestring[targetarraysize];
-  int idx_valuestart = 0, leadingdigits = 0;
-
-  if (float2pad < 0) {
-    targetarray[0] = '-';
-    idx_valuestart = 1;
-  }
-
-  // If no. of leading digits exceeds available chars, return asterisks
-  if (float2pad > 0) {
-    leadingdigits = (int)log10(float2pad) + 1;
-  }
-  else if (float2pad < 0) {
-    leadingdigits = (int)log10(-float2pad) + 1;
-    // If -1 < number < 0, don't need to display leading zero
-    if (float2pad > -1) {
-      dpposition = leadingdigits;
-    }
-    else {
-      dpposition = leadingdigits + 1;
-    }
-    
-  }
-  else {
-    dpposition = targetarraysize - 1;
-  }
-  if (leadingdigits > targetarraysize-1) {
-    for (int i = 0; i < (targetarraysize-1); ++i) {
-      targetarray[i] = '*';
-    }
-  }
-  // Else write placeholder zeros and then populate with the float value
-  else {
-    int npads = max(0, min(dpposition, targetarraysize-1) - leadingdigits);
-    // DO NOT USE abs() HERE - I know pow looks ugly, but it stops -0.0 appearing
-    snprintf(absvaluestring, sizeof(absvaluestring), "%f", pow(pow(float2pad, 2), 0.5));
-    for (int i = idx_valuestart; i < (targetarraysize-1); ++i) {
-      if (i < npads) {
-        targetarray[i] = '0';
-      }
-      else {
-        targetarray[i] = absvaluestring[i-npads];
-      }
-    }
-  }
-  // Null terminate the string (final character of the array)
-  targetarray[targetarraysize-1] = '\0';
 }
 
 void vl5begin(void)
