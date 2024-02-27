@@ -36,6 +36,9 @@ const int pin_V3S = 26;
 const int pin_SDA0 = SDA;             // Pin 27
 const int pin_SCL0 = SCL;             // Pin 28
 const int pin_S4 = 32;
+const int pin_Red = 9;
+const int pin_Yellow = 2;
+const int pin_Green = 1;
 
 /* BINGU hardware definitions (BINGU Schematic v0.4.pdf) */
 const float R9_MOhm = 0.33;

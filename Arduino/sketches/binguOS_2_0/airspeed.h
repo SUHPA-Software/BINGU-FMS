@@ -10,6 +10,13 @@
 
 void calc_sensor_readings();
 float calcPvapoursaturated(float T_C);
+void set_airspeed_LEDs();
+void write_airspeed_LEDs(bool r, bool y, bool g);
+
+//TODO setup constants as per flight testing
+const float v_stall = 1.5;
+const float v_rotate = 1.5;
+const float pitchGradient = 1;
 
 float Patm_Pa, Tatm_C, RH_percent;
 float vias_mps;
@@ -69,5 +76,37 @@ float calcPvapoursaturated(float T_C)
   }
   return 610.78 * pow(e, varA * T_C / (varB + T_C));  
 }
+
+/* TODO WIP
+void set_airspeed_LEDs() {
+  //need pitch and speed
+  float maxPitch = ;
+  //TODO set conditions
+  if (pitch > pitchGradient * (speed - v_stall)) {
+    // RED = TOO SLOW: Stalling
+    write_airspeed_LEDs(HIGH,LOW,LOW);
+  } else if (pitch > pitchGradient * (speed - v_rotate)) {
+    // RED/YELLOW = -VE RATE OF CLIMB: About to Stall pitch down
+    write_airspeed_LEDs(HIGH,HIGH,LOW);
+  } else if (pitch > pitchGradient * (speed - v_rotate) + 10) {
+    // YELLOW = ABOVE STALL: Level Flight
+    write_airspeed_LEDs(LOW,HIGH,LOW);
+  } else if (pitch < pitchGradient * (speed - v_rotate) + 10) {
+    // YELLOW/GREEN = GOOD SPEED: Can pitch up v. slowly
+    write_airspeed_LEDs(LOW,HIGH,HIGH);
+  } else {
+    // GREEN = FAST: Can Pitch Up
+    //TODO check current code => Should not occur
+    write_airspeed_LEDs(LOW,LOW,HIGH);
+  }
+  
+}
+
+void write_airspeed_LEDs(bool r, bool y, bool g) {
+  digitalWrite(pin_Red,r);
+  digitalWrite(pin_Yellow,y);
+  digitalWrite(pin_Green,g);
+}
+*/
 
 #endif //BINGU_AIRSPEED_H
